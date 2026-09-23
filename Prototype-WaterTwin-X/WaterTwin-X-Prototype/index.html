@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WaterTwin-X Prototype</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0B2A3D; font-family: Calibri, Arial, sans-serif; overflow: hidden; }
+  #scene { position: absolute; inset: 0; }
+  #panel {
+    position: absolute; top: 16px; left: 16px; width: 320px;
+    background: rgba(11,42,61,0.9); color: #EAF4FA; padding: 16px 18px;
+    border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  #panel h1 { font-size: 18px; margin: 0 0 4px; }
+  #panel .sub { font-size: 12px; color: #9FC6D8; margin-bottom: 12px; }
+  #panel .stat { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; }
+  #panel .stat b { color: #E8823C; }
+  #panel button {
+    width: 100%; margin-top: 8px; padding: 9px 10px; border: none; border-radius: 8px;
+    background: #1C7293; color: white; font-size: 13px; cursor: pointer; font-weight: bold;
+  }
+  #panel button.secondary { background: #13455C; }
+  #panel button.danger { background: #E8823C; }
+  #panel button:hover { filter: brightness(1.15); }
+  #param-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  #param-tabs button {
+    flex: 1; margin-top: 0; padding: 7px 4px; font-size: 11.5px;
+    background: #13455C; opacity: 0.6;
+  }
+  #param-tabs button.active { opacity: 1; background: #1C7293; }
+  .inject-row { display: flex; gap: 6px; margin-top: 8px; }
+  .inject-row button { font-size: 10.5px; padding: 7px 4px; }
+  #hyp-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #1C7293; }
+  #alert-feed { margin-top: 10px; max-height: 130px; overflow-y: auto; }
+  #alert-feed .item {
+    background: rgba(192,57,43,0.15); border-left: 3px solid #C0392B; border-radius: 4px;
+    padding: 6px 8px; font-size: 11px; margin-bottom: 5px; line-height: 1.4;
+  }
+  #alert-feed .item.ok { background: rgba(44,140,90,0.15); border-left-color: #2C8C5A; }
+  .info-note { font-size: 10.5px; color: #9FC6D8; margin-top: 4px; font-style: italic; }
+  #hyp-section h3 { font-size: 11px; letter-spacing: 1px; color: #9FC6D8; margin: 0 0 8px; }
+  .hyp-row { font-size: 12px; margin-bottom: 6px; }
+  .hyp-row .lbl { display:flex; justify-content:space-between; margin-bottom:3px; }
+  .hyp-track { height: 8px; background: #13293D; border-radius: 4px; overflow:hidden; }
+  .hyp-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+  #surprise-banner {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: #C0392B; color: white; padding: 10px 18px; border-radius: 10px;
+    font-size: 13px; font-weight: bold; box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    display: none; z-index: 10;
+  }
+  #legend { position: absolute; bottom: 16px; left: 16px; background: rgba(11,42,61,0.9); color: #EAF4FA;
+    padding: 10px 14px; border-radius: 10px; font-size: 11px; }
+  #legend div { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  #legend .sw { width:12px; height:12px; border-radius:3px; }
+  #chart-wrap { position: absolute; top: 16px; right: 16px; width: 340px; background: rgba(11,42,61,0.9);
+    border-radius: 12px; padding: 14px 16px; color:#EAF4FA; }
+  #chart-wrap h2 { font-size: 13px; margin: 0 0 8px; color: #E8823C; letter-spacing: 1px; }
+  canvas#chart { width: 100%; height: 140px; display:block; }
+  #hint { position:absolute; bottom:16px; right:16px; color:#6FA; opacity:0.6; font-size:11px; color:#9FC6D8;}
+  #toast {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    background: #1C7293; color: white; padding: 10px 18px; border-radius: 10px;
+    font-size: 12.5px; max-width: 480px; text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    display: none; z-index: 10;
+  }
+  #conn-error {
+    position: absolute; inset: 0; background: rgba(11,42,61,0.96); color: #EAF4FA;
+    display: none; align-items: center; justify-content: center; text-align: center;
+    font-size: 15px; padding: 40px; z-index: 20;
+  }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<div id="panel">
+  <h1>WaterTwin-X</h1>
+  <div class="sub">Live prototype &mdash; multi-parameter twin</div>
+
+  <div id="param-tabs">
+    <button data-param="do" class="active">DO</button>
+    <button data-param="ph">pH</button>
+    <button data-param="turbidity">Turbidity</button>
+  </div>
+
+  <div class="stat">Sensor readings taken <b id="stat-steps">0</b></div>
+  <div class="stat">Twin accuracy score <b id="stat-error">-</b></div>
+  <div class="info-note">Lower accuracy score = twin's guesses are closer to reality</div>
+  <button id="btn-step">Send Next Priority Sensor</button>
+
+  <div id="alert-feed"><div class="item ok">No problems found yet for this parameter.</div></div>
+
+  <div class="inject-row">
+    <button data-inject="do" class="secondary">+ Sewage (DO)</button>
+    <button data-inject="ph" class="secondary">+ Acid discharge (pH)</button>
+    <button data-inject="turbidity" class="secondary">+ Runoff (Turbidity)</button>
+  </div>
+
+  <button id="btn-reset" class="danger">Reset Twin</button>
+
+  <div id="hyp-section">
+    <h3>DO: TWO COMPETING EXPLANATIONS</h3>
+    <div class="info-note" style="margin-top:-4px; margin-bottom:8px;">The twin tracks two theories for the oxygen problem, and updates its belief as evidence comes in.</div>
+    <div class="hyp-row">
+      <div class="lbl"><span>A. One dumping point (e.g. a pipe)</span><span id="hyp-point-pct">-</span></div>
+      <div class="hyp-track"><div class="hyp-fill" id="hyp-point-fill" style="background:#E8823C;width:0%"></div></div>
+    </div>
+    <div class="hyp-row">
+      <div class="lbl"><span>B. Spread-out upstream cause</span><span id="hyp-diffuse-pct">-</span></div>
+      <div class="hyp-track"><div class="hyp-fill" id="hyp-diffuse-fill" style="background:#1C7293;width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="surprise-banner"></div>
+
+<div id="chart-wrap">
+  <h2>REMAINING ERROR: PRIORITY vs RANDOM SAMPLING</h2>
+  <canvas id="chart" width="308" height="140"></canvas>
+</div>
+
+<div id="legend">
+  <div><div class="sw" style="background:#2C8C5A"></div> Healthy (selected parameter)</div>
+  <div><div class="sw" style="background:#E8823C"></div> Degraded / uncertain</div>
+  <div><div class="sw" style="background:#C0392B"></div> Alert (outside safe range)</div>
+  <div><div class="sw" style="background:#F4D35E;border:1px solid #333"></div> Measured (known) cell</div>
+  <div><div class="sw" style="background:transparent;border:2px solid #8E44AD"></div> High disagreement (DO theories)</div>
+</div>
+<div id="hint">Drag to rotate &middot; scroll to zoom</div>
+<div id="toast"></div>
+<div id="conn-error">
+  <div>
+    <div style="font-size:20px; font-weight:bold; margin-bottom:10px;">Can't reach the backend</div>
+    <div>Make sure <code>python3 server.py</code> is running in a terminal, then reload this page.</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const API = "http://localhost:8765";
+
+// ---------- three.js setup ----------
+const sceneEl = document.getElementById("scene");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0B2A3D);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(9, 11, 14);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+sceneEl.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(7, 0, 7);
+controls.enableDamping = true;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+dir.position.set(10, 18, 6);
+scene.add(dir);
+
+// base plate
+const plate = new THREE.Mesh(
+  new THREE.BoxGeometry(16, 0.3, 16),
+  new THREE.MeshStandardMaterial({ color: 0x0E3549 })
+);
+plate.position.set(7, -0.2, 7);
+scene.add(plate);
+
+let cellMeshes = [];       // one box per grid cell
+let markerMeshes = [];     // small ring markers for "known" cells
+let gridGroup = new THREE.Group();
+scene.add(gridGroup);
+
+function colorForCell(value, alertLow, alertHigh, scale) {
+  const margin = scale * 0.25;
+  if (alertLow !== null && value < alertLow) return 0xC0392B;
+  if (alertHigh !== null && value > alertHigh) return 0xC0392B;
+  if (alertLow !== null && value < alertLow + margin) return 0xE8823C;
+  if (alertHigh !== null && value > alertHigh - margin) return 0xE8823C;
+  return 0x2C8C5A;
+}
+
+function disposeGroup(group) {
+  group.children.forEach(obj => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) obj.material.dispose();
+  });
+  group.clear();
+}
+
+function buildGrid(gridN, predicted, knownMask, alertLow, alertHigh, scale, disagreement, showDisagreement) {
+  disposeGroup(gridGroup);
+  cellMeshes = []; markerMeshes = [];
+  const spacing = 14 / gridN;
+  const boxSize = spacing * 0.82;
+
+  // normalize height per-parameter using this grid's own value range, so DO
+  // (roughly 0-8), pH (roughly 4-8) and turbidity (roughly 0-45) all render
+  // at a sensible, comparable visual height
+  let minV = Infinity, maxV = -Infinity;
+  for (let r = 0; r < gridN; r++) for (let c = 0; c < gridN; c++) {
+    minV = Math.min(minV, predicted[r][c]); maxV = Math.max(maxV, predicted[r][c]);
+  }
+  const heightRange = Math.max(maxV - minV, 1e-6);
+  const heightFor = v => 0.3 + ((v - minV) / heightRange) * 2.8;
+
+  let topDisagreement = new Set();
+  if (showDisagreement) {
+    let flatDis = [];
+    for (let r = 0; r < gridN; r++) for (let c = 0; c < gridN; c++)
+      if (!knownMask[r][c]) flatDis.push({ r, c, v: disagreement[r][c] });
+    flatDis.sort((a,b) => b.v - a.v);
+    topDisagreement = new Set(flatDis.slice(0, 4).map(x => `${x.r},${x.c}`));
+  }
+
+  for (let r = 0; r < gridN; r++) {
+    for (let c = 0; c < gridN; c++) {
+      const val = predicted[r][c];
+      const height = heightFor(val);
+      const geo = new THREE.BoxGeometry(boxSize, height, boxSize);
+      const mat = new THREE.MeshStandardMaterial({
+        color: colorForCell(val, alertLow, alertHigh, scale),
+        roughness: 0.5, metalness: 0.05
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(c * spacing + 0.5, height/2, r * spacing + 0.5);
+      gridGroup.add(mesh);
+      cellMeshes.push(mesh);
+
+      if (knownMask[r][c]) {
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(boxSize*0.42, 0.05, 8, 24),
+          new THREE.MeshStandardMaterial({ color: 0xF4D35E, emissive: 0x664400 })
+        );
+        ring.rotation.x = Math.PI/2;
+        ring.position.set(c * spacing + 0.5, height + 0.12, r * spacing + 0.5);
+        gridGroup.add(ring);
+      } else if (topDisagreement.has(`${r},${c}`)) {
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(boxSize*0.46, 0.045, 8, 24),
+          new THREE.MeshStandardMaterial({ color: 0x8E44AD, emissive: 0x3A1854 })
+        );
+        ring.rotation.x = Math.PI/2;
+        ring.position.set(c * spacing + 0.5, height + 0.12, r * spacing + 0.5);
+        gridGroup.add(ring);
+      }
+    }
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------- chart (plain canvas, no extra dependency) ----------
+const chartCanvas = document.getElementById("chart");
+const ctx = chartCanvas.getContext("2d");
+
+function drawChart(errorLog) {
+  const w = chartCanvas.width, h = chartCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const pad = 24;
+  const series = [
+    { data: errorLog.random, color: "#5B7A8C", label: "Random" },
+    { data: errorLog.priority, color: "#E8823C", label: "WaterTwin-X" }
+  ];
+  const allVals = errorLog.random.concat(errorLog.priority);
+  const maxV = Math.max(...allVals) * 1.1;
+  const n = errorLog.priority.length;
+
+  // axes
+  ctx.strokeStyle = "#2C4A5C"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, 4); ctx.lineTo(pad, h-pad); ctx.lineTo(w-4, h-pad); ctx.stroke();
+
+  series.forEach(s => {
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2.5; ctx.beginPath();
+    s.data.forEach((v, i) => {
+      const x = pad + (i/(Math.max(n-1,1))) * (w - pad - 10);
+      const y = (h-pad) - (v/maxV) * (h - pad - 10);
+      i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
+
+  ctx.font = "10px Calibri"; ctx.fillStyle = "#5B7A8C"; ctx.fillText("Random", w-160, 14);
+  ctx.fillStyle = "#5B7A8C"; ctx.fillRect(w-170, 8, 8, 8);
+  ctx.fillStyle = "#E8823C"; ctx.fillText("WaterTwin-X", w-90, 14);
+  ctx.fillStyle = "#E8823C"; ctx.fillRect(w-100, 8, 8, 8);
+}
+
+// ---------- state sync with backend ----------
+let surpriseBannerTimer = null;
+let toastTimer = null;
+let selectedParam = "do";
+let lastPayload = null;
+
+function showToast(msg, ms = 4500) {
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
+  toast.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.style.display = "none"; }, ms);
+}
+
+function showConnError(show) {
+  document.getElementById("conn-error").style.display = show ? "flex" : "none";
+}
+
+async function apiCall(path, options) {
+  try {
+    const res = await fetch(`${API}${path}`, options);
+    showConnError(false);
+    return await res.json();
+  } catch (err) {
+    showConnError(true);
+    throw err;
+  }
+}
+
+const ALERT_MEANING = {
+  do: "fish-kill risk \u2014 not enough oxygen for aquatic life",
+  ph: "water too acidic/alkaline for aquatic life",
+  turbidity: "too much silt \u2014 can smother habitat and block sunlight"
+};
+
+function renderSelectedParam(payload) {
+  const t = payload.twin;
+  const p = t.parameters[selectedParam];
+  buildGrid(
+    t.grid_n, p.predicted, t.known_mask, p.alert_low, p.alert_high, p.scale,
+    t.disagreement, selectedParam === "do"
+  );
+
+  const paramAlerts = t.alerts.filter(a => a.parameter === selectedParam);
+  const feed = document.getElementById("alert-feed");
+  feed.innerHTML = "";
+  if (paramAlerts.length === 0) {
+    feed.innerHTML = `<div class="item ok">No problems found yet for ${p.label}.</div>`;
+  } else {
+    const shown = paramAlerts.slice(0, 5);
+    shown.forEach(a => {
+      const div = document.createElement("div");
+      div.className = "item";
+      const dir = a.direction === "low" ? "too low" : "too high";
+      div.textContent = `Spot (${a.row},${a.col}): ${p.label} ${dir} at ${a.value}${p.unit} \u2014 ${ALERT_MEANING[selectedParam]}`;
+      feed.appendChild(div);
+    });
+    if (paramAlerts.length > 5) {
+      const more = document.createElement("div");
+      more.className = "info-note";
+      more.textContent = `+ ${paramAlerts.length - 5} more location(s) with the same issue.`;
+      feed.appendChild(more);
+    }
+  }
+}
+
+async function refresh(payload) {
+  if (payload.error && !payload.twin) {
+    showToast(payload.error);
+    return;
+  }
+  lastPayload = payload;
+  const t = payload.twin;
+
+  renderSelectedParam(payload);
+  document.getElementById("stat-steps").textContent = t.steps_taken;
+  document.getElementById("stat-error").textContent = t.total_error.toFixed(4);
+  drawChart(payload.error_log);
+
+  const hc = t.hypothesis_confidence;
+  const pPct = Math.round(hc.point_source * 100), dPct = Math.round(hc.diffuse * 100);
+  document.getElementById("hyp-point-pct").textContent = pPct + "%";
+  document.getElementById("hyp-diffuse-pct").textContent = dPct + "%";
+  document.getElementById("hyp-point-fill").style.width = pPct + "%";
+  document.getElementById("hyp-diffuse-fill").style.width = dPct + "%";
+
+  if (payload.error) showToast(payload.error);
+
+  const ls = t.last_surprise;
+  const banner = document.getElementById("surprise-banner");
+  if (ls && ls.surprising) {
+    const unit = t.parameters[ls.parameter].unit;
+    const label = t.parameters[ls.parameter].label;
+    banner.textContent = `Surprise (${label}) at (${ls.row},${ls.col}): predicted ${ls.predicted}${unit}, found ${ls.actual}${unit} (z=${ls.z_score}) — confidently wrong, not just uncertain`;
+    banner.style.display = "block";
+    clearTimeout(surpriseBannerTimer);
+    surpriseBannerTimer = setTimeout(() => { banner.style.display = "none"; }, 5000);
+  }
+}
+
+document.querySelectorAll("#param-tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    selectedParam = btn.dataset.param;
+    document.querySelectorAll("#param-tabs button").forEach(b => b.classList.toggle("active", b === btn));
+    if (lastPayload) renderSelectedParam(lastPayload);
+  });
+});
+
+async function loadState() {
+  try { refresh(await apiCall("/state")); } catch (err) { /* connection error already shown */ }
+}
+
+document.getElementById("btn-step").addEventListener("click", async () => {
+  try { refresh(await apiCall("/step", { method: "POST" })); } catch (err) { /* connection error already shown */ }
+});
+
+// inject a new problem event for a chosen parameter, always into a cell that
+// hasn't been measured yet - otherwise the twin would (correctly) notice
+// immediately, contradicting the "twin is blind until checked" point
+const INJECT_VALUES = { do: 0.6, ph: 4.0, turbidity: 45.0 };
+const INJECT_LABELS = { do: "a sewage discharge", ph: "an acidic discharge", turbidity: "a runoff/silt event" };
+
+document.querySelectorAll("[data-inject]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const field = btn.dataset.inject;
+    try {
+      const payload = await apiCall("/state");
+      const n = payload.twin.grid_n;
+      const unknownCells = [];
+      for (let r = 0; r < n; r++)
+        for (let c = 0; c < n; c++)
+          if (!payload.twin.known_mask[r][c]) unknownCells.push([r, c]);
+
+      if (unknownCells.length === 0) {
+        showToast("Every cell has already been measured - reset the twin to try again.");
+        return;
+      }
+      const [row, col] = unknownCells[Math.floor(Math.random() * unknownCells.length)];
+      const result = await apiCall("/manual", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ row, col, field, value: INJECT_VALUES[field] })
+      });
+      refresh(result);
+      showToast(`Simulated ${INJECT_LABELS[field]} at (${row},${col}). The twin won't react until a sensor reaches it - click "Send Next Priority Sensor" a few times.`, 6000);
+    } catch (err) { /* connection error already shown */ }
+  });
+});
+
+document.getElementById("btn-reset").addEventListener("click", async () => {
+  try {
+    refresh(await apiCall("/reset", {
+      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ seed: 7 })
+    }));
+  } catch (err) { /* connection error already shown */ }
+});
+
+loadState();
+</script>
+</body>
+</html>
